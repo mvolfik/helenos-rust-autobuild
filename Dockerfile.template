@@ -1,0 +1,69 @@
+FROM debian:12 AS builder-base
+# "base" image with installation of dependencies shared to Rust and HelenOS builders
+RUN apt update
+RUN apt install -y --no-install-recommends git build-essential ca-certificates curl python3
+
+
+FROM builder-base AS helenos-builder
+RUN apt install -y --no-install-recommends texinfo file wget bison flex meson python-is-python3 unzip genisoimage
+
+WORKDIR /builder
+RUN git clone https://github.com/helenos/helenos.git --depth 1
+ENV CROSS_PREFIX=/helenos-toolchain
+
+WORKDIR /builder/helenos/tools
+RUN ./toolchain.sh {HELENOS_TOOLCHAIN}
+# this line can be removed after our last HelenOS patches are merged
+RUN cd .. && git remote add mv https://github.com/mvolfik/helenos.git && git pull mv master
+
+WORKDIR /builder/build
+RUN ../helenos/configure.sh {HELENOS_TARGET_NAME}
+RUN ninja export-dev
+
+
+FROM builder-base AS rust-builder
+RUN apt install -y --no-install-recommends libclang-dev
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --profile minimal -y --default-toolchain nightly
+
+WORKDIR /builder
+# this clone can remain cached at some old version of my HelenOS patches. We just use it below to run
+# a minimal build that will download all needed artifacts from Rust's CI (llvm, rustc-nightly and beta, ...)
+RUN git clone https://github.com/mvolfik/rust.git -b helenos --shallow-since 2025-04-15
+
+WORKDIR /builder/rust
+RUN ./x build --stage 0 library/core
+
+# update the repo to latest changes and build the compiler - this doesn't need HelenOS toolchain yet
+RUN git pull
+RUN ./x build library --stage 1 --target {host_platform}-unknown-linux-gnu
+
+# copy the toolchain from helenos-builder
+# we want to preserve symlinks, so we use RUN --mount=... cp, instead of the COPY command
+RUN --mount=type=bind,target=/helenos-builder,from=helenos-builder \
+    mkdir -p /usr/{GCC_TOOLCHAIN}-helenos/lib /helenos-include && \
+    cp -rP /helenos-builder/builder/build/export-dev/lib/* /usr/{GCC_TOOLCHAIN}-helenos/lib && \
+    cp -rP /helenos-builder/builder/build/export-dev/include/* /helenos-include && \
+    cp -rP /helenos-builder/helenos-toolchain/* /usr/
+
+ENV HELENOS_INCLUDE_BASE=/helenos-include
+
+# Now build the library. This will use the compiler built above.
+# This requires the HelenOS linker, and links to libc, startfiles etc.
+RUN ./x build library --stage 1 --target {host_platform}-unknown-linux-gnu,{RUST_TOOLCHAIN}
+
+# Create a named link to this toolchain. The gen.py script appends below builds of various Rust applications,
+# which will use this toolchain.
+RUN /root/.cargo/bin/rustup toolchain link custom build/host/stage1
+
+
+{build_apps}
+
+
+FROM helenos-builder AS helenos-iso-builder
+COPY --from=apps /apps/* /builder/helenos/uspace/dist/app/
+RUN cp /builder/helenos/contrib/artwork/HelenOS.svg /builder/helenos/uspace/dist/
+RUN ninja image_path
+RUN mkdir /builder/dist && cp $(cat image_path) /builder/dist/
+
+FROM scratch AS helenos-iso
+COPY --from=helenos-iso-builder /builder/dist /helenos-iso
