@@ -27,7 +27,7 @@ Interesting programs known to work on HelenOS:
 ```bash
 python3 gen.py x86_64 https://github.com/linebender/resvg https://github.com/mvolfik/imagecli-rs https://github.com/mvolfik/helenos-iced-apps > Dockerfile
 docker build --output=. --target=helenos-iso .
-qemu-system-x86_64 -enable-kvm -device e1000,netdev=n1 -netdev user,id=n1,hostfwd=udp::8080-:8080,hostfwd=udp::8081-:8081,hostfwd=tcp::8080-:8080,hostfwd=tcp::8081-:8081,hostfwd=tcp::2223-:2223 -usb -device nec-usb-xhci,id=xhci -device usb-tablet -device intel-hda -device hda-duplex -serial stdio -boot d -cdrom helenos-iso/image.iso
+qemu-system-x86_64 -enable-kvm -device e1000,netdev=n1 -netdev user,id=n1,hostfwd=udp::8080-:8080,hostfwd=udp::8081-:8081,hostfwd=tcp::8080-:8080,hostfwd=tcp::8081-:8081,hostfwd=tcp::2223-:2223 -usb -device nec-usb-xhci,id=xhci -device usb-tablet -device intel-hda -device hda-duplex -serial stdio -boot d -cdrom helenos-iso/image.iso -m 2G
 ```
 
 Example commands to run in HelenOS to test the applications linked above:
