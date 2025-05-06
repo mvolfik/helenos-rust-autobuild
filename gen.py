@@ -61,7 +61,7 @@ def usage():
         file=sys.stderr,
     )
     print(
-        "Available architectures: x86_64, sparc64, powrpc, aarch64, i686, arm.",
+        "Available architectures: x86_64, sparc64, powerpc, aarch64, i686.",
         file=sys.stderr,
     )
     print(
@@ -79,16 +79,24 @@ def usage():
 if len(sys.argv) < 3:
     usage()
 
-arch = sys.argv[1]
+args = iter(sys.argv[1:])
+
+arch = next(args)
+if arch == "--host":
+    host_platform = next(args)
+    arch = next(args)
+
 if arch not in CONFIGS:
     print(f"Unknown architecture: {arch}", file=sys.stderr)
     usage()
 
-apps = sys.argv[2:]
+apps = []
+for arg in args:
+    if arg == "--host":
+        host_platform = next(args)
+        continue
 
-if apps[0] == "--host":
-    host_platform = apps[1]
-    apps = apps[2:]
+    apps.append(arg)
 
 build_apps = ""
 
